@@ -1,0 +1,32 @@
+cmake_minimum_required (VERSION 2.8)
+project (sgl)
+
+option(BUILD_32 "build 32-bit on linux/windows" OFF)
+option(BUILD_64 "build 64-bit on linux/windows" OFF)
+
+include_directories("${PROJECT_SOURCE_DIR}")
+
+if (${CMAKE_SYSTEM_NAME} MATCHES "Darwin" AND NOT CMAKE_OSX_ARCHITECTURES)
+	set (CMAKE_OSX_ARCHITECTURES "i386;x86_64")
+endif ()
+if (${CMAKE_SYSTEM_NAME} MATCHES "Linux" AND BUILD_32)
+	set (CMAKE_C_FLAGS -m32)
+endif ()
+if (${CMAKE_SYSTEM_NAME} MATCHES "Linux" AND BUILD_64)
+	set (CMAKE_C_FLAGS -m64)
+endif ()
+if (${CMAKE_SYSTEM_NAME} MATCHES "Windows")
+	set_source_files_properties (example.c PROPERTIES LANGUAGE CXX)
+endif ()
+
+if (${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
+	set (SOURCES_LIB sgl_macosx_cocoa.m)
+else (${CMAKE_SYSTEM_NAME} MATCHES "Linux")
+	set (SOURCES_LIB sgl_linux_x11.c)
+else (${CMAKE_SYSTEM_NAME} MATCHES "Windows")
+endif ()
+
+add_library (queue SHARED ${SOURCES_LIB})
+add_library (queue_static STATIC ${SOURCES_LIB})
+add_executable (example example.c)
+target_link_libraries (example queue_static)
