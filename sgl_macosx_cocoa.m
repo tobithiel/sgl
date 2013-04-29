@@ -1,3 +1,24 @@
+/**
+  * Copyright (C) 2011 by Tobias Thiel
+  * Permission is hereby granted, free of charge, to any person obtaining a copy
+  * of this software and associated documentation files (the "Software"), to deal
+  * in the Software without restriction, including without limitation the rights
+  * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+  * copies of the Software, and to permit persons to whom the Software is
+  * furnished to do so, subject to the following conditions:
+  * 
+  * The above copyright notice and this permission notice shall be included in
+  * all copies or substantial portions of the Software.
+  * 
+  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+  * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+  * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+  * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+  * THE SOFTWARE.
+  */
+
 #include "sgl.h"
 
 #include "sgl_macosx_cocoa.h"
@@ -547,39 +568,46 @@ int8_t sgl_translate_event(sgl_event_t *se, NSEvent *ne, sgl_window_t *w) {
 		case NSLeftMouseDown:
 			se->type = SGL_MOUSE_DOWN;
 			se->mouse.button = SGL_MOUSE_LEFT;
+			se->mouse.doubleclick = ([ne clickCount] > 0 && [ne clickCount] % 2 == 0);
 			sgl_translate_mouse_location(&(se->mouse), [ne locationInWindow], wdata->v);
 			break;
 			
 		case NSRightMouseDown:
 			se->type = SGL_MOUSE_DOWN;
 			se->mouse.button = SGL_MOUSE_RIGHT;
+			se->mouse.doubleclick = ([ne clickCount] > 0 && [ne clickCount] % 2 == 0);
 			sgl_translate_mouse_location(&(se->mouse), [ne locationInWindow], wdata->v);
 			break;
 			
 		case NSLeftMouseUp:
 			se->type = SGL_MOUSE_UP;
 			se->mouse.button = SGL_MOUSE_LEFT;
+			se->mouse.doubleclick = ([ne clickCount] > 0 && [ne clickCount] % 2 == 0);
 			sgl_translate_mouse_location(&(se->mouse), [ne locationInWindow], wdata->v);
 			break;
 			
 		case NSRightMouseUp:
 			se->type = SGL_MOUSE_UP;
 			se->mouse.button = SGL_MOUSE_RIGHT;
+			se->mouse.doubleclick = ([ne clickCount] > 0 && [ne clickCount] % 2 == 0);
 			sgl_translate_mouse_location(&(se->mouse), [ne locationInWindow], wdata->v);
 			break;
 			
 		case NSMouseMoved:
 			se->type = SGL_MOUSE_MOVE;
+			se->mouse.doubleclick = 0;
 			sgl_translate_mouse_location(&(se->mouse), [ne locationInWindow], wdata->v);
 			break;
 			
 		case NSMouseEntered:
 			se->type = SGL_MOUSE_ENTER;
+			se->mouse.doubleclick = 0;
 			sgl_translate_mouse_location(&(se->mouse), [ne locationInWindow], wdata->v);
 			break;
 			
 		case NSMouseExited:
 			se->type = SGL_MOUSE_LEAVE;
+			se->mouse.doubleclick = 0;
 			sgl_translate_mouse_location(&(se->mouse), [ne locationInWindow], wdata->v);
 			break;
 			

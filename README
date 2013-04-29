@@ -1,0 +1,27 @@
+SGL - Small OpenGL library
+
+This is supposed to be a small alternative to glut and the various opengl helpers.
+One of the main advantages is that you have the control over your main event loop,
+which is the reason for its existence.
+
+What it offers:
+- window creation
+- window resizing
+- window closing
+- keyboard events
+- mouse events
+currently supported platforms:
+- Linux X11 (incomplete)
+- Mac OS X Cocoa (mostly complete)
+
+Build steps:
+- mkdir build && cd build
+- cmake ..
+- make / build VS project under windows
+
+What needs to be done:
+- ability to create OpenGL 3 context
+- customize pixel format
+- scroll wheel
+- better thread safety documentation
+- windows support

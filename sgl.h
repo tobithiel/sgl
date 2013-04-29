@@ -1,35 +1,26 @@
 #ifndef __SGL_H__
 #define __SGL_H__
 
-/*
- * SGL - Small OpenGL library
- *
- * this is supposed to be a small, easy & fast to use alternative to glut etc
- * one of the main advantages is that you have the control over your main event loop
- *
- * what it offers:
- * - window creation
- * - window resizing
- * - window closing
- * - keyboard events
- * - mouse events
- * currently supported platforms:
- * - Linux X11
- * - Mac OS X Cocoa
- *
- * what needs to be done:
- * - ability to create OpenGL 3 context
- * - costumize pixel format
- * - support for function/modifier/special keys
- * - option to disable resizing
- * - scroll wheel
- * - mouse tracking rectangle
- * - mouse clickCount? doubleClick under OS X impossible without
- * - mouse dragged
- * - add which window to events
- * - OS X Window -> Zoom
- * - thread safety
- */
+/**
+  * Copyright (C) 2011 by Tobias Thiel
+  * Permission is hereby granted, free of charge, to any person obtaining a copy
+  * of this software and associated documentation files (the "Software"), to deal
+  * in the Software without restriction, including without limitation the rights
+  * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+  * copies of the Software, and to permit persons to whom the Software is
+  * furnished to do so, subject to the following conditions:
+  * 
+  * The above copyright notice and this permission notice shall be included in
+  * all copies or substantial portions of the Software.
+  * 
+  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+  * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+  * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+  * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+  * THE SOFTWARE.
+  */
 
 #include <stdlib.h>
 #include <stdint.h>
@@ -159,6 +150,7 @@ typedef struct {
 
 typedef struct {
 	sgl_mouse_button_e button;
+	uint8_t doubleclick;
 	float x;
 	float y;
 } sgl_event_mouse_t;
