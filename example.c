@@ -1,5 +1,7 @@
 // OS X: gcc -Wall -Wextra -Wno-unused-parameter -framework Cocoa -framework OpenGL -m64 -g -o example -x objective-c example.c sgl_macosx_cocoa.m ../queue/queue.c
 
+// gcc -Wall -Wextra -Wno-unused-parameter -framework Cocoa -framework OpenGL -I../ -I../../queue/ -L./lib/queue/ -lqueue_static -m64 -g -o example -x objective-c ../example.c ../sgl_macosx_cocoa.m ../sgl_internal.c
+
 #include <unistd.h>
 #include <pthread.h>
 
@@ -15,10 +17,11 @@ void *display(void *arg) {
 	state_t *s = (state_t *)arg;
 	
 	sgl_window_settings_t ws;
+	ws.fullscreen = 0;
 	ws.width = 640;
 	ws.height = 480;
 	ws.title = "SGL Window";
-	s->w = sgl_create_window(&ws);
+	s->w = sgl_window_create(&ws);
 	
 	sgl_make_current(s->w);
 	// Set color and depth clear value
@@ -29,7 +32,8 @@ void *display(void *arg) {
 	glEnable(GL_DEPTH_TEST);
 	glDepthMask(GL_TRUE);
 	glDisable(GL_BLEND);
-		
+	
+	int i = 0;
 	while(s->done == 0) {
 		// Setup a perspective projection
 		glViewport(0, 0, 640, 480);
@@ -54,17 +58,20 @@ void *display(void *arg) {
 		sgl_swap_buffers(s->w);
 		//printf("... done\n");
 		
-		usleep(10000);
+		usleep(100);
+		i += 1;
 	}
 	
-	sgl_close_window(s->w);
+	sgl_window_close(s->w);
 	
 	return NULL;
 }
 
-int verbose_event_handling(void) {
+sgl_event_t *verbose_event_handling(void) {
 	int close = 0;
-	sgl_event_t *e = sgl_wait_event();
+	sgl_event_t *e = sgl_event_check();
+	if (e == NULL)
+		return NULL;
 	if(e->type == SGL_WINDOW_CLOSE) {
 		printf("got window close\n");
 		close = 1;
@@ -72,7 +79,8 @@ int verbose_event_handling(void) {
 		printf("got window closed\n");
 		close = 1;
 	} else if(e->type == SGL_WINDOW_RESIZE) {
-		printf("got window resize\n");
+		sgl_window_settings_t *ws = sgl_window_settings_get(e->window);
+		printf("got window resize (%d/%d)\n", ws->width, ws->height);
 	} else if(e->type == SGL_WINDOW_EXPOSE) {
 		printf("got window expose\n");
 	} else if(e->type == SGL_MOUSE_DOWN) {
@@ -92,9 +100,8 @@ int verbose_event_handling(void) {
 	} else {
 		printf("unknown event\n");
 	}
-	free(e);
 	
-	return close;
+	return e;
 }
 
 int main(int argc, char *argv[]) {
@@ -102,26 +109,38 @@ int main(int argc, char *argv[]) {
 	s.n = 1;
 	s.done = 0;
 	
-	state_t s2;
-	s.n = 2;
-	s2.done = 0;
-	
 	sgl_init();
+
+	sgl_screen_t *screens;
+	uint8_t num_screens = sgl_get_screens(&screens);
+	printf("Screens:\n");
+	int i;
+	for (i = 0; i < num_screens; i++) {
+		printf("\tScreen %d: %dx%d, %dbpp, %s\n", screens[i].no, screens[i].width, screens[i].height, screens[i].depth, screens[i].description);
+	}
+	printf("\n");
 	
 	pthread_t t;
 	pthread_create(&t, NULL, display, &s);
-	pthread_t t2;
-	pthread_create(&t2, NULL, display, &s2);
 	
-	int i = 0;
-	while(s.done == 0 || s2.done == 0) {
-		int close = verbose_event_handling();
-		if (close == 1) {
+	i = 0;
+	while(s.done == 0) {
+		sgl_event_t *e = verbose_event_handling();
+		if (e != NULL && e->type == SGL_WINDOW_CLOSED) {
 			s.done = 1;
-			s2.done = 1;
+		} else if (e != NULL && e->type == SGL_KEY_DOWN && (e->key.key == SGL_K_Q || e->key.key == SGL_K_ESC)) {
+			s.done = 1;
+		} else if (e != NULL && e->type == SGL_KEY_DOWN && e->key.key == SGL_K_F) {
+			printf("toogling fullscreen\n");
+			sgl_window_settings_t *ws = sgl_window_settings_get(s.w);
+			ws->fullscreen = !(ws->fullscreen);
+			ws->fullscreen_screen = 0;
+			ws->fullscreen_blanking = 0;
+			sgl_window_settings_change(s.w, ws);
 		}
-		
-		usleep(10000);
+		free(e);
+
+		usleep(1000);
 		i++;
 		/*if(i == 15) {
 			s.done = 1;

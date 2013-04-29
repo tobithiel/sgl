@@ -2,6 +2,10 @@
 
 #include "sgl_macosx_cocoa.h"
 
+sgl_window_cocoa_t *get_window_data(sgl_window_t *w) {
+	return (sgl_window_cocoa_t *)w->impldata;
+}
+
 @implementation SGLApplicationDelegate
 
 - (id)init {
@@ -25,7 +29,7 @@
 	}
 }
 
-- (Queue *)eventQueue {
+- (queue_t *)eventQueue {
 	return m_eq;
 }
 
@@ -153,32 +157,51 @@
 	return self;
 }
 
+- (sgl_window_t *)sglwindow {
+	return m_w;
+}
+
+- (void)setSglWindow:(sgl_window_t *)theW {
+	m_w = theW;
+}
+
 - (BOOL)windowShouldClose:(id)sender {
-	sgl_event_t *e = malloc(sizeof(sgl_event_t));
-	e->type = SGL_WINDOW_CLOSE;
-	queue_put([m_ad eventQueue], e);
+	sgl_window_cocoa_t *wdata = get_window_data(m_w);
+	if (!(wdata->fullscreen_transition)) {
+		sgl_event_t *e = malloc(sizeof(sgl_event_t));
+		e->type = SGL_WINDOW_CLOSE;
+		e->window = m_w;
+		queue_put([m_ad eventQueue], e);
+	}
 	return YES;
 }
 
 - (void)windowWillClose:(NSNotification *)notification {
-	sgl_event_t *e = malloc(sizeof(sgl_event_t));
-	e->type = SGL_WINDOW_CLOSED;
-	queue_put([m_ad eventQueue], e);
+	sgl_window_cocoa_t *wdata = get_window_data(m_w);
+	if (!(wdata->fullscreen_transition)) {
+		sgl_event_t *e = malloc(sizeof(sgl_event_t));
+		e->type = SGL_WINDOW_CLOSED;
+		e->window = m_w;
+		queue_put([m_ad eventQueue], e);
+	}
 }
 
 - (void)windowDidResize:(NSNotification *)notification {
 	sgl_event_t *e = malloc(sizeof(sgl_event_t));
 	e->type = SGL_WINDOW_RESIZE;
-	NSRect vf = [self frame];
-	e->window.width = vf.size.width;
-	e->window.height = vf.size.height;
+	e->window = m_w;
 	queue_put([m_ad eventQueue], e);
 }
 
 - (void)windowDidExpose:(NSNotification *)notification {
 	sgl_event_t *e = malloc(sizeof(sgl_event_t));
 	e->type = SGL_WINDOW_EXPOSE;
+	e->window = m_w;
 	queue_put([m_ad eventQueue], e);
+}
+
+- (BOOL)canBecomeKeyWindow {
+	return YES;
 }
 
 @end
@@ -191,6 +214,14 @@
 	}
 	
 	return self;
+}
+
+- (sgl_window_t *)sglwindow {
+	return m_w;
+}
+
+- (void)setSglWindow:(sgl_window_t *)theW {
+	m_w = theW;
 }
 
 - (BOOL)acceptsFirstResponder {
@@ -207,7 +238,7 @@
 
 - (void)putEventInQueue:(NSEvent *)theEvent {
 	sgl_event_t *e = malloc(sizeof(sgl_event_t));
-	sgl_translate_event(e, theEvent, self);
+	sgl_translate_event(e, theEvent, m_w);
 	queue_put([m_ad eventQueue], e);
 }
 
@@ -287,13 +318,74 @@ void sgl_init(void) {
 	[arp release];
 }
 
-sgl_window_t *sgl_create_window(sgl_window_settings_t *ws) {
+uint8_t sgl_get_screens(sgl_screen_t **screens) {
+	NSArray *tmp = [NSScreen screens];
+	uint8_t num_screens = [tmp count];
+	if (screens != NULL) {
+		*screens = calloc(num_screens, sizeof(sgl_screen_t));
+
+		int i;
+		for (i = 0; i < num_screens; i++) {
+			NSScreen *s = [tmp objectAtIndex:i];
+			(*screens)[i].no = i;
+			(*screens)[i].width = s.frame.size.width;
+			(*screens)[i].height = s.frame.size.height;
+			(*screens)[i].depth = s.depth;
+			(*screens)[i].description_len = 0;
+			(*screens)[i].description = NULL;
+		}
+	}
+
+	return num_screens;
+}
+
+void sgl_window_fullscreen_enter(sgl_window_t *w, sgl_window_settings_t *newws) {
+	if (!(w->settings->fullscreen)) {
+		sgl_window_cocoa_t *wdata = get_window_data(w);
+		wdata->fullscreen_transition = 1;
+		[wdata->w close];
+		NSApplicationPresentationOptions options = NSApplicationPresentationHideDock + NSApplicationPresentationHideMenuBar;
+		NSDictionary *dict = [NSDictionary dictionaryWithObjectsAndKeys:
+			[NSNumber numberWithUnsignedLong:options], @"NSFullScreenModeApplicationPresentationOptions",
+			[NSNumber numberWithBool:(newws->fullscreen_blanking)], @"NSFullScreenModeAllScreens",
+			nil];
+		[wdata->v enterFullScreenMode:[[NSScreen screens] objectAtIndex:newws->fullscreen_screen]
+			withOptions:dict];
+		w->settings->fullscreen = 1;
+		w->settings->fullscreen_screen = newws->fullscreen_screen;
+		w->settings->fullscreen_blanking = newws->fullscreen_blanking;
+		wdata->fullscreen_transition = 0;
+	}
+}
+
+void sgl_window_fullscreen_exit(sgl_window_t *w) {
+	if (w->settings->fullscreen) {
+		sgl_window_cocoa_t *wdata = get_window_data(w);
+		NSApplicationPresentationOptions options = NSApplicationPresentationDefault;
+		NSDictionary *dict = [NSDictionary dictionaryWithObject:[NSNumber numberWithUnsignedLong:options] forKey:@"NSFullScreenModeApplicationPresentationOptions"];
+		[wdata->v exitFullScreenModeWithOptions:dict];
+		// needed to get focus and key events again
+		[[wdata->v window] makeKeyAndOrderFront:wdata->ad];
+		[[wdata->v window] makeFirstResponder:wdata->v];
+		w->settings->fullscreen = 0;
+	}
+}
+
+sgl_window_t *sgl_window_create(sgl_window_settings_t *ws) {
 	NSAutoreleasePool *arp = [[NSAutoreleasePool alloc] init];
 	sgl_window_t *w = calloc(1, sizeof(sgl_window_t));
-	if(w == NULL)
+	if (w == NULL)
 		return NULL;
+	sgl_window_cocoa_t *wdata = calloc(1, sizeof(sgl_window_cocoa_t));
+	if (wdata == NULL)
+		return NULL;
+	sgl_window_settings_t *wscopy = calloc(1, sizeof(sgl_window_settings_t));
+	if (wscopy == NULL)
+		return NULL;
+	memcpy(wscopy, ws, sizeof(sgl_window_settings_t));
+	w->settings = wscopy;
 	
-	w->ad = [[NSApplication sharedApplication] delegate];
+	wdata->ad = [[NSApplication sharedApplication] delegate];
 	
 	NSOpenGLPixelFormatAttribute attribs[] = {
 		NSOpenGLPFAAccelerated,
@@ -307,34 +399,65 @@ sgl_window_t *sgl_create_window(sgl_window_settings_t *ws) {
 	NSOpenGLPixelFormat *glpf = [[NSOpenGLPixelFormat alloc] initWithAttributes:attribs];
 	
 	NSRect viewBounds = NSMakeRect(0, 0, ws->width, ws->height);
-	w->w = [[SGLWindow alloc]
+	NSUInteger styleMask = NSTitledWindowMask | NSClosableWindowMask | NSMiniaturizableWindowMask | NSResizableWindowMask;
+	wdata->w = [[SGLWindow alloc]
 			initWithContentRect:viewBounds
-			styleMask:NSTitledWindowMask | NSClosableWindowMask | NSMiniaturizableWindowMask | NSResizableWindowMask
+			styleMask:styleMask
 			backing:NSBackingStoreBuffered
 			defer:NO];
-	w->v = [[SGLView alloc] initWithFrame:viewBounds];
-	[w->v setPixelFormat:glpf];
+	[wdata->w setReleasedWhenClosed:NO];
+	wdata->v = [[SGLView alloc] initWithFrame:viewBounds];
+	[wdata->v setPixelFormat:glpf];
 	[glpf release];
+	[wdata->w setSglWindow:w];
+	[wdata->v setSglWindow:w];
 	
-	[w->w setContentView:w->v];
-	[w->w setDelegate:w->w];
-	[w->w setTitle:[NSString stringWithCString:ws->title encoding:NSASCIIStringEncoding]];
-	[w->w setLevel:NSNormalWindowLevel];
-	[w->w setInitialFirstResponder:w->v];
-	[w->w makeKeyAndOrderFront:w->ad];
-	[w->v updateTrackingAreas];
+	[wdata->w setContentView:wdata->v];
+	[wdata->w setDelegate:wdata->w];
+	[wdata->w setTitle:[NSString stringWithCString:ws->title encoding:NSASCIIStringEncoding]];
+	[wdata->w setLevel: NSNormalWindowLevel];
+	[wdata->w setInitialFirstResponder:wdata->v];
+	if (ws->fullscreen)
+		sgl_window_fullscreen_enter(w, ws);
+	[wdata->w makeKeyAndOrderFront:wdata->ad];
+	[wdata->v updateTrackingAreas];
 	[arp release];
 	
+	w->impldata = wdata;
 	return w;
 }
 
-sgl_event_t *sgl_wait_event(void) {
+sgl_window_settings_t *sgl_window_settings_get(sgl_window_t *w) {
+	sgl_window_settings_t *wscopy = calloc(1, sizeof(sgl_window_settings_t));
+	memcpy(wscopy, w->settings, sizeof(sgl_window_settings_t));
+	return wscopy;
+}
+
+sgl_window_t *sgl_window_settings_change(sgl_window_t *w, sgl_window_settings_t *ws) {
+	// TODO implement other attributes
+	if (w->settings->width != ws->width)
+		return NULL;
+	if (w->settings->height != ws->height)
+		return NULL;
+	if (w->settings->title != ws->title)
+		return NULL;
+	if (w->settings->fullscreen != ws->fullscreen) {
+		if (!(w->settings->fullscreen) && ws->fullscreen) {
+			sgl_window_fullscreen_enter(w, ws);
+		} else if (w->settings->fullscreen && !(ws->fullscreen)) {
+			sgl_window_fullscreen_exit(w);
+		}
+	}
+	return w;
+}
+
+sgl_event_t *sgl_event_wait(void) {
 	NSAutoreleasePool *arp = [[NSAutoreleasePool alloc] init];
 	NSApplication *app = [NSApplication sharedApplication];
 	SGLApplicationDelegate *ad = (SGLApplicationDelegate *)[app delegate];
 	NSDate *past = [NSDate distantPast];
 	NSDate *future = [NSDate distantFuture];
-	Queue *q = [ad eventQueue];
+	queue_t *q = [ad eventQueue];
 	
 	// cocoa event loop - get all available events, wait if none
 	NSEvent *event = nil;
@@ -349,7 +472,7 @@ sgl_event_t *sgl_wait_event(void) {
 	return e;
 }
 
-sgl_event_t *sgl_check_event(void) {
+sgl_event_t *sgl_event_check(void) {
 	NSAutoreleasePool *arp = [[NSAutoreleasePool alloc] init];
 	NSApplication *app = [NSApplication sharedApplication];
 	SGLApplicationDelegate *ad = (SGLApplicationDelegate *)[app delegate];
@@ -362,7 +485,7 @@ sgl_event_t *sgl_check_event(void) {
 	[arp release];
 	
 	// get a event for the application
-	Queue *q = [ad eventQueue];
+	queue_t *q = [ad eventQueue];
 	sgl_event_t *e = NULL;
 	queue_get(q, (void **)&e);
 	
@@ -371,27 +494,41 @@ sgl_event_t *sgl_check_event(void) {
 
 void sgl_swap_buffers(sgl_window_t *w) {
 	//NSAutoreleasePool *arp = [[NSAutoreleasePool alloc] init];
-	[[w->v openGLContext] flushBuffer];
+	sgl_window_cocoa_t *wdata = get_window_data(w);
+	[[wdata->v openGLContext] flushBuffer];
 	//[arp release];
 }
 
 void sgl_make_current(sgl_window_t *w) {
 	NSAutoreleasePool *arp = [[NSAutoreleasePool alloc] init];
-	[[w->v openGLContext] makeCurrentContext];
+	sgl_window_cocoa_t *wdata = get_window_data(w);
+	[[wdata->v openGLContext] makeCurrentContext];
 	[arp release];
 }
 
-void sgl_close_window(sgl_window_t *w) {
+void sgl_window_close(sgl_window_t *w) {
 	NSAutoreleasePool *arp = [[NSAutoreleasePool alloc] init];
-	//[w->w close];
-	//[w->v release];
-	free(w);
+	sgl_window_cocoa_t *wdata = get_window_data(w);
+	if ([wdata->w isVisible] || [wdata->v isInFullScreenMode]) {
+		printf("closing before destroy\n");
+		if (w->settings->fullscreen) {
+			printf("exiting fullscreen before close\n");
+			sgl_window_fullscreen_exit(w);
+			usleep(500);
+		}
+		[wdata->w close];
+	}
+	[wdata->v release];
+	[wdata->w release];
 	[arp release];
+	free(w->settings);
+	free(w);
 }
 
 void sgl_terminate(void) {
 	NSAutoreleasePool *arp = [[NSAutoreleasePool alloc] init];
 	[(SGLApplicationDelegate *)[[NSApplication sharedApplication] delegate] terminate];
+	[[NSApplication sharedApplication] terminate:nil];
 	[arp release];
 }
 
@@ -403,45 +540,47 @@ void sgl_clean(void) {
 	[arp release];
 }
 
-int8_t sgl_translate_event(sgl_event_t *se, NSEvent *ne, SGLView *v) {
+int8_t sgl_translate_event(sgl_event_t *se, NSEvent *ne, sgl_window_t *w) {
+	se->window = w;
+	sgl_window_cocoa_t *wdata = get_window_data(w);
 	switch([ne type]) {
 		case NSLeftMouseDown:
 			se->type = SGL_MOUSE_DOWN;
 			se->mouse.button = SGL_MOUSE_LEFT;
-			sgl_translate_mouse_location(&(se->mouse), [ne locationInWindow], v);
+			sgl_translate_mouse_location(&(se->mouse), [ne locationInWindow], wdata->v);
 			break;
 			
 		case NSRightMouseDown:
 			se->type = SGL_MOUSE_DOWN;
 			se->mouse.button = SGL_MOUSE_RIGHT;
-			sgl_translate_mouse_location(&(se->mouse), [ne locationInWindow], v);
+			sgl_translate_mouse_location(&(se->mouse), [ne locationInWindow], wdata->v);
 			break;
 			
 		case NSLeftMouseUp:
 			se->type = SGL_MOUSE_UP;
 			se->mouse.button = SGL_MOUSE_LEFT;
-			sgl_translate_mouse_location(&(se->mouse), [ne locationInWindow], v);
+			sgl_translate_mouse_location(&(se->mouse), [ne locationInWindow], wdata->v);
 			break;
 			
 		case NSRightMouseUp:
 			se->type = SGL_MOUSE_UP;
 			se->mouse.button = SGL_MOUSE_RIGHT;
-			sgl_translate_mouse_location(&(se->mouse), [ne locationInWindow], v);
+			sgl_translate_mouse_location(&(se->mouse), [ne locationInWindow], wdata->v);
 			break;
 			
 		case NSMouseMoved:
 			se->type = SGL_MOUSE_MOVE;
-			sgl_translate_mouse_location(&(se->mouse), [ne locationInWindow], v);
+			sgl_translate_mouse_location(&(se->mouse), [ne locationInWindow], wdata->v);
 			break;
 			
 		case NSMouseEntered:
 			se->type = SGL_MOUSE_ENTER;
-			sgl_translate_mouse_location(&(se->mouse), [ne locationInWindow], v);
+			sgl_translate_mouse_location(&(se->mouse), [ne locationInWindow], wdata->v);
 			break;
 			
 		case NSMouseExited:
 			se->type = SGL_MOUSE_LEAVE;
-			sgl_translate_mouse_location(&(se->mouse), [ne locationInWindow], v);
+			sgl_translate_mouse_location(&(se->mouse), [ne locationInWindow], wdata->v);
 			break;
 			
 		//case NSLeftMouseDragged:
@@ -451,12 +590,14 @@ int8_t sgl_translate_event(sgl_event_t *se, NSEvent *ne, SGLView *v) {
 			se->type = SGL_KEY_DOWN;
 			if(0 == sgl_translate_key(&(se->key), [ne keyCode]))
 				return 0;
+			se->key.modifier = sgl_translate_modifier([ne modifierFlags]);
 			break;
 			
 		case NSKeyUp:
 			se->type = SGL_KEY_UP;
 			if(0 == sgl_translate_key(&(se->key), [ne keyCode]))
 				return 0;
+			se->key.modifier = sgl_translate_modifier([ne modifierFlags]);
 			break;
 			
 		//case NSFlagsChanged: // modifier flags changed
@@ -472,6 +613,23 @@ void sgl_translate_mouse_location(sgl_event_mouse_t *me, NSPoint eventLocation, 
 	me->y = eventLocation.y;
 }
 
+uint8_t sgl_translate_modifier(NSUInteger modifierFlags) {
+	uint8_t mods = 0;
+	if (modifierFlags & NSAlphaShiftKeyMask)
+		mods |= SGL_K_CAPSLOCK;
+	if (modifierFlags & NSShiftKeyMask)
+		mods |= SGL_K_SHIFT;
+	if (modifierFlags & NSControlKeyMask)
+		mods |= SGL_K_CONTROL;
+	if (modifierFlags & NSAlternateKeyMask)
+		mods |= SGL_K_ALT;
+	if (modifierFlags & NSCommandKeyMask)
+		mods |= SGL_K_OS;
+	if (modifierFlags & NSNumericPadKeyMask)
+		mods |= SGL_K_NUMPAD;
+	return mods;
+}
+
 int8_t sgl_translate_key(sgl_event_key_t *ke, unsigned short kc) {
 	// special keys
 	if(kc == kVK_Space)
@@ -481,7 +639,7 @@ int8_t sgl_translate_key(sgl_event_key_t *ke, unsigned short kc) {
 	else if(kc == kVK_Return)
 		ke->key = SGL_K_RETURN;
 	else if(kc == kVK_Escape)
-		ke->key = SGL_K_ESCAPE;
+		ke->key = SGL_K_ESC;
 	else if(kc == kVK_ForwardDelete)
 		ke->key = SGL_K_DELETE;
 	// direction keys

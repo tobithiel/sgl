@@ -34,15 +34,35 @@
 #include <stdlib.h>
 #include <stdint.h>
 
+#include <queue.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 typedef struct {
+	uint8_t no;
+	uint16_t width;
+	uint16_t height;
+	uint16_t depth;
+	uint8_t description_len;
+	char *description;
+} sgl_screen_t;
+
+typedef struct {
+	uint8_t fullscreen;
+	uint8_t fullscreen_screen;
+	uint8_t fullscreen_blanking;
 	uint16_t width;
 	uint16_t height;
 	char *title;
 } sgl_window_settings_t;
+
+typedef struct {
+	sgl_window_settings_t *settings;
+	// implementation specific data
+	void *impldata;
+} sgl_window_t;
 
 typedef enum {
 	// window is made active, needs redraw
@@ -69,21 +89,22 @@ typedef enum {
 	SGL_MOUSE_LEAVE = 10
 } sgl_event_types_t;
 
-// TODO all the other keys F?, ...
-// TODO move modifier in separate enum
 typedef enum {
-	SGL_K_SHIFT,
-	SGL_K_CONTROL,
-	SGL_K_CAPSLOCK,
-	SGL_K_NUMLOCK,
-	SGL_K_ALT,
-	SGL_K_ALTGR,
-	SGL_K_OS,
+	SGL_K_SHIFT = 1,
+	SGL_K_CONTROL = 2,
+	SGL_K_CAPSLOCK = 4,
+	SGL_K_NUMPAD = 8,
+	SGL_K_ALT = 16,
+	SGL_K_ALTGR = 32,
+	SGL_K_OS = 64 // also meta or super key
+} sgl_keyboard_modifier_e;
+
+typedef enum {
 	SGL_K_SPACE,
 	SGL_K_BACKSPACE,
 	SGL_K_RETURN,
 	SGL_K_DELETE,
-	SGL_K_ESCAPE,
+	SGL_K_ESC,
 	SGL_K_UP,
 	SGL_K_DOWN,
 	SGL_K_LEFT,
@@ -137,11 +158,6 @@ typedef struct {
 } sgl_event_key_t;
 
 typedef struct {
-	uint16_t width;
-	uint16_t height;
-} sgl_event_window_t;
-
-typedef struct {
 	sgl_mouse_button_e button;
 	float x;
 	float y;
@@ -149,7 +165,7 @@ typedef struct {
 
 typedef struct {
 	sgl_event_types_t type;
-	sgl_event_window_t window;
+	sgl_window_t *window;
 	sgl_event_key_t key;
 	sgl_event_mouse_t mouse;
 } sgl_event_t;
@@ -175,10 +191,29 @@ typedef struct {
 void sgl_init(void);
 
 /*
+ * returns the number of screens in the system.
+ * the argument will contain an array of this size.
+ * the first entry will be the main screen.
+ if the argument is NULL only the number of screens will be returned.
+ */
+uint8_t sgl_get_screens(sgl_screen_t **screens);
+
+/*
  * creates a window with the given settings
  * returns NULL if error occured
  */
-sgl_window_t *sgl_create_window(sgl_window_settings_t *ws);
+sgl_window_t *sgl_window_create(sgl_window_settings_t *);
+
+/*
+ * returns the settings of the given window
+ */
+sgl_window_settings_t *sgl_window_settings_get(sgl_window_t *);
+
+/*
+ * chnages the settings of a given window
+ * not thread-safe
+ */
+sgl_window_t *sgl_window_settings_change(sgl_window_t *, sgl_window_settings_t *);
 
 /*
  * blocks until an event occurs
@@ -187,7 +222,7 @@ sgl_window_t *sgl_create_window(sgl_window_settings_t *ws);
  * TODO has/should be called from main thread
  * returns NULL if there is no event, otherwise an event
  */
-sgl_event_t *sgl_wait_event(void);
+sgl_event_t *sgl_event_wait(void);
 
 /*
  * checks if an event occured
@@ -196,24 +231,24 @@ sgl_event_t *sgl_wait_event(void);
  * TODO has/should be called from main thread
  * returns NULL if there is no event, otherwise an event
  */
-sgl_event_t *sgl_check_event(void);
+sgl_event_t *sgl_event_check(void);
 
 /*
  * performs a buffer swap in the given window
  * not thread-safe for the same window
  */
-void sgl_swap_buffers(sgl_window_t *w);
+void sgl_swap_buffers(sgl_window_t *);
 
 /*
  * makes the OpenGL context of the window current in the thread from which is called
  */
-void sgl_make_current(sgl_window_t *w);
+void sgl_make_current(sgl_window_t *);
 
 /*
  * the given window will be closed and its memory released
  * not thread-safe for the same window, only call this once, when you are done with the window
  */
-void sgl_close_window(sgl_window_t *w);
+void sgl_window_close(sgl_window_t *);
 
 /*
  * wake threads which are waiting for events
