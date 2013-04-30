@@ -46,7 +46,9 @@ add_library (sgl_static STATIC ${SOURCES_LIB})
 add_executable (sglexample example.c)
 target_link_libraries (sglexample sgl_static)
 
-add_subdirectory (lib/queue EXCLUDE_FROM_ALL)
+if (NOT TARGET queue_static)
+	add_subdirectory (lib/queue EXCLUDE_FROM_ALL)
+endif ()
 
 if (${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
 	add_framework (Cocoa sgl)
