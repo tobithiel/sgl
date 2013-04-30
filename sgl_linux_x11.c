@@ -22,8 +22,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#include "sgl.h"
-#include "sgl_linux_x11.h"
+#include <sgl.h>
+#include <sgl_linux_x11.h>
 
 GLint att[] = {GLX_RGBA, GLX_DEPTH_SIZE, 24, GLX_DOUBLEBUFFER, None};
 

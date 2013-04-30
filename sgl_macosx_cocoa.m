@@ -19,9 +19,9 @@
   * THE SOFTWARE.
   */
 
-#include "sgl.h"
+#include <sgl.h>
 
-#include "sgl_macosx_cocoa.h"
+#include <sgl_macosx_cocoa.h>
 
 sgl_window_cocoa_t *get_window_data(sgl_window_t *w) {
 	return (sgl_window_cocoa_t *)w->impldata;

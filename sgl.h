@@ -27,6 +27,23 @@
 
 #include <queue.h>
 
+#if defined(__APPLE__)
+// OS X Cocoa
+#import <Cocoa/Cocoa.h>
+#import <OpenGL/OpenGL.h>
+#import <Carbon/Carbon.h> // only for the keyCodes, no linking necessary
+#elif defined(linux) || defined(__linux)
+// Linux X11
+#include <X11/X.h>
+#include <X11/Xlib.h>
+#include <GL/gl.h>
+#include <GL/glx.h>
+#include <GL/glu.h>
+#else
+// unsupported
+#error "Unknown and unsupported operating system"
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -161,19 +178,6 @@ typedef struct {
 	sgl_event_key_t key;
 	sgl_event_mouse_t mouse;
 } sgl_event_t;
-
-#if defined(__APPLE__)
-// Mac OS X windows
-#include "sgl_macosx_cocoa.h"
-#elif defined(linux) || defined(__linux)
-// Linux windows
-#include "sgl_linux_x11.h"
-//#elif defined(_WIN32) || defined(__WIN32__)
-// Windows windows
-// TODO windows implementation
-#else
-#error "Unknown and unsupported operating system"
-#endif
 
 /*
  * initialize library

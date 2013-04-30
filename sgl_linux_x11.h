@@ -25,16 +25,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#include <pthread.h>
-
-#include <X11/X.h>
-#include <X11/Xlib.h>
-#include <GL/gl.h>
-#include <GL/glx.h>
-#include <GL/glu.h>
-
-#include "../queue/queue.h"
-
 typedef struct {
 	Queue *eq;
 	Display *dpy;
@@ -45,10 +35,7 @@ typedef struct {
 	Colormap cmap;
 	Atom wmDeleteMessage;
 	GLXContext glc;
-	pthread_mutex_t *mtx;
 } sgl_window_t;
-
-#include "sgl.h"
 
 void sgl_check_new_events(sgl_window_t *w);
 void sgl_check_new_events_wait(sgl_window_t *w);
