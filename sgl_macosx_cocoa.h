@@ -25,6 +25,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#import <Cocoa/Cocoa.h>
+#import <OpenGL/OpenGL.h>
+#import <Carbon/Carbon.h> // only for the keyCodes, no linking necessary
+
 // TODO dynamic checking whether cmd program or not
 #define COCOA_FROM_CMD 1
 

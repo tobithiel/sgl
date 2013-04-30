@@ -28,19 +28,10 @@
 #include <queue.h>
 
 #if defined(__APPLE__)
-// OS X Cocoa
-#import <Cocoa/Cocoa.h>
-#import <OpenGL/OpenGL.h>
-#import <Carbon/Carbon.h> // only for the keyCodes, no linking necessary
+#import <OpenGL/gl.h>
 #elif defined(linux) || defined(__linux)
-// Linux X11
-#include <X11/X.h>
-#include <X11/Xlib.h>
 #include <GL/gl.h>
-#include <GL/glx.h>
-#include <GL/glu.h>
 #else
-// unsupported
 #error "Unknown and unsupported operating system"
 #endif
 
