@@ -33,9 +33,7 @@
 #define COCOA_FROM_CMD 1
 
 @interface SGLApplicationDelegate : NSObject <NSApplicationDelegate> {
-	uint8_t m_sentTermination;
 }
-- (queue_t *)eventQueue;
 - (NSString *)applicationName;
 - (void)populateApplicationMenu:(NSMenu *)aMenu;
 - (void)populateWindowMenu:(NSMenu *)aMenu;
@@ -43,19 +41,23 @@
 @end
 
 @interface SGLWindow : NSWindow <NSWindowDelegate> {
-	SGLApplicationDelegate *m_ad;
+	sgl_env_t *m_e;
 	sgl_window_t *m_w;
 }
-- (sgl_window_t *)sglwindow;
+- (sgl_env_t *)sglEnv;
+- (void)setSglEnv:(sgl_env_t *)theE;
+- (sgl_window_t *)sglWindow;
 - (void)setSglWindow:(sgl_window_t *)theW;
 @end
 
 @interface SGLView : NSOpenGLView {
-	SGLApplicationDelegate *m_ad;
-	NSTrackingArea *m_ta;
+	sgl_env_t *m_e;
 	sgl_window_t *m_w;
+  NSTrackingArea *m_ta;
 }
-- (sgl_window_t *)sglwindow;
+- (sgl_env_t *)sglEnv;
+- (void)setSglEnv:(sgl_env_t *)theE;
+- (sgl_window_t *)sglWindow;
 - (void)setSglWindow:(sgl_window_t *)theW;
 @end
 

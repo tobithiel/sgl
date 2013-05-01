@@ -29,24 +29,6 @@ sgl_window_cocoa_t *get_window_data(sgl_window_t *w) {
 
 @implementation SGLApplicationDelegate
 
-- (id)init {
-	if([super init]) {
-		m_sentTermination = 0;
-		m_eq = queue_create();
-	}
-	
-	return self;
-}
-
-- (void)dealloc {
-	queue_destroy_complete(m_eq, free);
-	[super dealloc];
-}
-
-- (queue_t *)eventQueue {
-	return m_eq;
-}
-
 - (void)applicationWillFinishLaunching:(NSNotification *)aNotification {
 	NSApplication *app = [NSApplication sharedApplication];
 	NSMenu *mainMenu = [[NSMenu alloc] initWithTitle:@"MainMenu"];
@@ -163,15 +145,15 @@ sgl_window_cocoa_t *get_window_data(sgl_window_t *w) {
 
 @implementation SGLWindow
 
-- (id)initWithContentRect:(NSRect)contentRect styleMask:(NSUInteger)windowStyle backing:(NSBackingStoreType)bufferingType defer:(BOOL)deferCreation {
-	if([super initWithContentRect:contentRect styleMask:windowStyle backing:bufferingType defer:deferCreation]) {
-		m_ad = (SGLApplicationDelegate *)[[NSApplication sharedApplication] delegate];
-	}
-	
-	return self;
+- (sgl_env_t *)sglEnv {
+	return m_e;
 }
 
-- (sgl_window_t *)sglwindow {
+- (void)setSglEnv:(sgl_env_t *)theE {
+	m_e = theE;
+}
+
+- (sgl_window_t *)sglWindow {
 	return m_w;
 }
 
@@ -185,7 +167,7 @@ sgl_window_cocoa_t *get_window_data(sgl_window_t *w) {
 		sgl_event_t *e = malloc(sizeof(sgl_event_t));
 		e->type = SGL_WINDOW_CLOSE;
 		e->window = m_w;
-		queue_put([m_ad eventQueue], e);
+		queue_put(m_e->eq, e);
 	}
 	return YES;
 }
@@ -196,7 +178,7 @@ sgl_window_cocoa_t *get_window_data(sgl_window_t *w) {
 		sgl_event_t *e = malloc(sizeof(sgl_event_t));
 		e->type = SGL_WINDOW_CLOSED;
 		e->window = m_w;
-		queue_put([m_ad eventQueue], e);
+		queue_put(m_e->eq, e);
 	}
 }
 
@@ -204,14 +186,14 @@ sgl_window_cocoa_t *get_window_data(sgl_window_t *w) {
 	sgl_event_t *e = malloc(sizeof(sgl_event_t));
 	e->type = SGL_WINDOW_RESIZE;
 	e->window = m_w;
-	queue_put([m_ad eventQueue], e);
+	queue_put(m_e->eq, e);
 }
 
 - (void)windowDidExpose:(NSNotification *)notification {
 	sgl_event_t *e = malloc(sizeof(sgl_event_t));
 	e->type = SGL_WINDOW_EXPOSE;
 	e->window = m_w;
-	queue_put([m_ad eventQueue], e);
+	queue_put(m_e->eq, e);
 }
 
 - (BOOL)canBecomeKeyWindow {
@@ -222,15 +204,15 @@ sgl_window_cocoa_t *get_window_data(sgl_window_t *w) {
 
 @implementation SGLView
 
-- (id)initWithFrame:(NSRect)frameRect {
-	if([super initWithFrame:frameRect]) {
-		m_ad = (SGLApplicationDelegate *)[[NSApplication sharedApplication] delegate];
-	}
-	
-	return self;
+- (sgl_env_t *)sglEnv {
+	return m_e;
 }
 
-- (sgl_window_t *)sglwindow {
+- (void)setSglEnv:(sgl_env_t *)theE {
+	m_e = theE;
+}
+
+- (sgl_window_t *)sglWindow {
 	return m_w;
 }
 
@@ -253,7 +235,7 @@ sgl_window_cocoa_t *get_window_data(sgl_window_t *w) {
 - (void)putEventInQueue:(NSEvent *)theEvent {
 	sgl_event_t *e = malloc(sizeof(sgl_event_t));
 	sgl_translate_event(e, theEvent, m_w);
-	queue_put([m_ad eventQueue], e);
+	queue_put(m_e->eq, e);
 }
 
 - (void)keyDown:(NSEvent *)theEvent {
@@ -311,7 +293,7 @@ sgl_window_cocoa_t *get_window_data(sgl_window_t *w) {
 
 @end
 
-void sgl_init(void) {
+sgl_env_t *sgl_init(void) {
 	NSAutoreleasePool *arp = [[NSAutoreleasePool alloc] init];
 	NSApplication *app = [NSApplication sharedApplication];
 	SGLApplicationDelegate *ad = [[SGLApplicationDelegate alloc] init]; // TODO leaks?
@@ -330,9 +312,17 @@ void sgl_init(void) {
 	// application launched
 	[app finishLaunching];
 	[arp release];
+
+	sgl_env_t *e = calloc(1, sizeof(sgl_env_t));
+	if(e == NULL) {
+		printf("could not allocate memory for window structure.\n");
+		return NULL;
+	}
+	e->eq = queue_create();
+	return e;
 }
 
-uint8_t sgl_get_screens(sgl_screen_t **screens) {
+uint8_t sgl_get_screens(sgl_env_t *e, sgl_screen_t **screens) {
 	NSArray *tmp = [NSScreen screens];
 	uint8_t num_screens = [tmp count];
 	if (screens != NULL) {
@@ -385,7 +375,7 @@ void sgl_window_fullscreen_exit(sgl_window_t *w) {
 	}
 }
 
-sgl_window_t *sgl_window_create(sgl_window_settings_t *ws) {
+sgl_window_t *sgl_window_create(sgl_env_t *e, sgl_window_settings_t *ws) {
 	NSAutoreleasePool *arp = [[NSAutoreleasePool alloc] init];
 	sgl_window_t *w = calloc(1, sizeof(sgl_window_t));
 	if (w == NULL)
@@ -423,7 +413,9 @@ sgl_window_t *sgl_window_create(sgl_window_settings_t *ws) {
 	wdata->v = [[SGLView alloc] initWithFrame:viewBounds];
 	[wdata->v setPixelFormat:glpf];
 	[glpf release];
+	[wdata->w setSglEnv:e];
 	[wdata->w setSglWindow:w];
+	[wdata->v setSglEnv:e];
 	[wdata->v setSglWindow:w];
 	
 	[wdata->w setContentView:wdata->v];
@@ -465,13 +457,13 @@ sgl_window_t *sgl_window_settings_change(sgl_window_t *w, sgl_window_settings_t 
 	return w;
 }
 
-sgl_event_t *sgl_event_wait(void) {
+sgl_event_t *sgl_event_wait(sgl_env_t *e) {
 	NSAutoreleasePool *arp = [[NSAutoreleasePool alloc] init];
 	NSApplication *app = [NSApplication sharedApplication];
 	SGLApplicationDelegate *ad = (SGLApplicationDelegate *)[app delegate];
 	NSDate *past = [NSDate distantPast];
 	NSDate *future = [NSDate distantFuture];
-	queue_t *q = [ad eventQueue];
+	queue_t *q = e->eq;
 	
 	// cocoa event loop - get all available events, wait if none
 	NSEvent *event = nil;
@@ -480,13 +472,13 @@ sgl_event_t *sgl_event_wait(void) {
 	[arp release];
 	
 	// get a event for the application
-	sgl_event_t *e = NULL;
-	queue_get(q, (void **)&e);
+	sgl_event_t *ev = NULL;
+	queue_get(q, (void **)&ev);
 
-	return e;
+	return ev;
 }
 
-sgl_event_t *sgl_event_check(void) {
+sgl_event_t *sgl_event_check(sgl_env_t *e) {
 	NSAutoreleasePool *arp = [[NSAutoreleasePool alloc] init];
 	NSApplication *app = [NSApplication sharedApplication];
 	SGLApplicationDelegate *ad = (SGLApplicationDelegate *)[app delegate];
@@ -499,11 +491,11 @@ sgl_event_t *sgl_event_check(void) {
 	[arp release];
 	
 	// get a event for the application
-	queue_t *q = [ad eventQueue];
-	sgl_event_t *e = NULL;
-	queue_get(q, (void **)&e);
+	queue_t *q = e->eq;
+	sgl_event_t *ev = NULL;
+	queue_get(q, (void **)&ev);
 	
-	return e;
+	return ev;
 }
 
 void sgl_swap_buffers(sgl_window_t *w) {
@@ -539,12 +531,13 @@ void sgl_window_close(sgl_window_t *w) {
 	free(w);
 }
 
-void sgl_clean(void) {
+void sgl_clean(sgl_env_t *e) {
 	NSAutoreleasePool *arp = [[NSAutoreleasePool alloc] init];
 	SGLApplicationDelegate *ad = [[NSApplication sharedApplication] delegate];
 	[[NSApplication sharedApplication] terminate:nil];
 	[ad release]; // must be available for [NSApplication terminate:]
 	[arp release];
+	free(e);
 }
 
 int8_t sgl_translate_event(sgl_event_t *se, NSEvent *ne, sgl_window_t *w) {
