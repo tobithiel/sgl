@@ -32,8 +32,16 @@
 #include <GL/glu.h>
 
 typedef struct {
-	Queue *eq;
 	Display *dpy;
+	// window array
+	uint8_t arr_size;
+	uint8_t arr_used;
+	Window *xwarr;
+	sgl_window_t **swarr;
+} sgl_env_x11_t;
+
+typedef struct {
+	Display *dpy2;
 	Window w;
 	uint16_t width;
 	uint16_t height;
@@ -41,11 +49,14 @@ typedef struct {
 	Colormap cmap;
 	Atom wmDeleteMessage;
 	GLXContext glc;
-} sgl_window_t;
+} sgl_window_x11_t;
 
-void sgl_check_new_events(sgl_window_t *w);
-void sgl_check_new_events_wait(sgl_window_t *w);
-int8_t sgl_translate_event(sgl_event_t *se, XEvent *xe, sgl_window_t *w);
+sgl_env_x11_t *get_env_data(sgl_env_t *);
+sgl_window_x11_t *get_window_data(sgl_window_t *);
+sgl_window_t *get_sgl_window_from_x11(sgl_env_x11_t *edata, Window w);
+void sgl_check_new_events(sgl_env_t *w);
+void sgl_check_new_events_wait(sgl_env_t *w);
+int8_t sgl_translate_event(sgl_event_t *se, XEvent *xe, sgl_env_t *e);
 int8_t sgl_translate_key(sgl_event_key_t *ke, XKeyEvent *ks);
 
 #endif /* __SGL_LINUX_X11_H__ */

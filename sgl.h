@@ -40,6 +40,11 @@ extern "C" {
 #endif
 
 typedef struct {
+	queue_t *eq;
+	void *impldata;
+} sgl_env_t;
+
+typedef struct {
 	uint8_t no;
 	uint16_t width;
 	uint16_t height;
@@ -175,21 +180,21 @@ typedef struct {
  * has to be called from the main thread!
  * not thread-safe, only call this once, before you begin
  */
-void sgl_init(void);
+sgl_env_t *sgl_init(void);
 
 /*
  * returns the number of screens in the system.
- * the argument will contain an array of this size.
+ * the last argument will contain an array of this size.
  * the first entry will be the main screen.
  if the argument is NULL only the number of screens will be returned.
  */
-uint8_t sgl_get_screens(sgl_screen_t **screens);
+uint8_t sgl_get_screens(sgl_env_t *e, sgl_screen_t **screens);
 
 /*
  * creates a window with the given settings
  * returns NULL if error occured
  */
-sgl_window_t *sgl_window_create(sgl_window_settings_t *);
+sgl_window_t *sgl_window_create(sgl_env_t *, sgl_window_settings_t *);
 
 /*
  * returns the settings of the given window
@@ -209,7 +214,7 @@ sgl_window_t *sgl_window_settings_change(sgl_window_t *, sgl_window_settings_t *
  * TODO has/should be called from main thread
  * returns NULL if there is no event, otherwise an event
  */
-sgl_event_t *sgl_event_wait(void);
+sgl_event_t *sgl_event_wait(sgl_env_t *);
 
 /*
  * checks if an event occured
@@ -218,7 +223,7 @@ sgl_event_t *sgl_event_wait(void);
  * TODO has/should be called from main thread
  * returns NULL if there is no event, otherwise an event
  */
-sgl_event_t *sgl_event_check(void);
+sgl_event_t *sgl_event_check(sgl_env_t *);
 
 /*
  * performs a buffer swap in the given window
@@ -238,18 +243,11 @@ void sgl_make_current(sgl_window_t *);
 void sgl_window_close(sgl_window_t *);
 
 /*
- * wake threads which are waiting for events
- * starts termination of application
- * not necessary if you don't need to wake threads waiting at sgl_wait_event
- * the effect can only be used once
- */
-void sgl_terminate(void);
-
-/*
  * releases memory allocated in sgl_init
  * not thread-safe, only call this once, when you are done
+ * threads which are waiting for events, will be woken
  */
-void sgl_clean(void);
+void sgl_clean(sgl_env_t *);
 
 #ifdef __cplusplus
 }

@@ -43,13 +43,6 @@ sgl_window_cocoa_t *get_window_data(sgl_window_t *w) {
 	[super dealloc];
 }
 
-- (void)terminate {
-	if(m_sentTermination == 0) {
-		m_sentTermination = 1;
-		[[NSApplication sharedApplication] terminate:self];
-	}
-}
-
 - (queue_t *)eventQueue {
 	return m_eq;
 }
@@ -546,17 +539,10 @@ void sgl_window_close(sgl_window_t *w) {
 	free(w);
 }
 
-void sgl_terminate(void) {
-	NSAutoreleasePool *arp = [[NSAutoreleasePool alloc] init];
-	[(SGLApplicationDelegate *)[[NSApplication sharedApplication] delegate] terminate];
-	[[NSApplication sharedApplication] terminate:nil];
-	[arp release];
-}
-
 void sgl_clean(void) {
 	NSAutoreleasePool *arp = [[NSAutoreleasePool alloc] init];
 	SGLApplicationDelegate *ad = [[NSApplication sharedApplication] delegate];
-	[ad terminate];
+	[[NSApplication sharedApplication] terminate:nil];
 	[ad release]; // must be available for [NSApplication terminate:]
 	[arp release];
 }

@@ -27,6 +27,7 @@
 typedef struct {
 	uint8_t done;
 	uint8_t n;
+	sgl_env_t *e;
 	sgl_window_t *w;
 } state_t;
 
@@ -38,7 +39,7 @@ void *display(void *arg) {
 	ws.width = 640;
 	ws.height = 480;
 	ws.title = "SGL Window";
-	s->w = sgl_window_create(&ws);
+	s->w = sgl_window_create(s->e, &ws);
 	
 	sgl_make_current(s->w);
 	// Set color and depth clear value
@@ -75,7 +76,7 @@ void *display(void *arg) {
 		sgl_swap_buffers(s->w);
 		//printf("... done\n");
 		
-		usleep(100);
+		usleep(10000);
 		i += 1;
 	}
 	
@@ -84,41 +85,38 @@ void *display(void *arg) {
 	return NULL;
 }
 
-sgl_event_t *verbose_event_handling(void) {
-	int close = 0;
-	sgl_event_t *e = sgl_event_check();
-	if (e == NULL)
+sgl_event_t *verbose_event_handling(sgl_env_t *e) {
+	sgl_event_t *ev = sgl_event_check(e);
+	if (ev == NULL)
 		return NULL;
-	if(e->type == SGL_WINDOW_CLOSE) {
+	if(ev->type == SGL_WINDOW_CLOSE) {
 		printf("got window close\n");
-		close = 1;
-	} else if(e->type == SGL_WINDOW_CLOSED) {
+	} else if(ev->type == SGL_WINDOW_CLOSED) {
 		printf("got window closed\n");
-		close = 1;
-	} else if(e->type == SGL_WINDOW_RESIZE) {
-		sgl_window_settings_t *ws = sgl_window_settings_get(e->window);
+	} else if(ev->type == SGL_WINDOW_RESIZE) {
+		sgl_window_settings_t *ws = sgl_window_settings_get(ev->window);
 		printf("got window resize (%d/%d)\n", ws->width, ws->height);
-	} else if(e->type == SGL_WINDOW_EXPOSE) {
+	} else if(ev->type == SGL_WINDOW_EXPOSE) {
 		printf("got window expose\n");
-	} else if(e->type == SGL_MOUSE_DOWN) {
+	} else if(ev->type == SGL_MOUSE_DOWN) {
 		printf("got mouse down\n");
-	} else if(e->type == SGL_MOUSE_UP) {
+	} else if(ev->type == SGL_MOUSE_UP) {
 		printf("got mouse up\n");
-	} else if(e->type == SGL_MOUSE_MOVE) {
+	} else if(ev->type == SGL_MOUSE_MOVE) {
 		printf("got mouse move\n");
-	} else if(e->type == SGL_MOUSE_ENTER) {
+	} else if(ev->type == SGL_MOUSE_ENTER) {
 		printf("got mouse enter\n");
-	} else if(e->type == SGL_MOUSE_LEAVE) {
+	} else if(ev->type == SGL_MOUSE_LEAVE) {
 		printf("got mouse leave\n");
-	} else if(e->type == SGL_KEY_DOWN) {
+	} else if(ev->type == SGL_KEY_DOWN) {
 		printf("got key press\n");
-	} else if(e->type == SGL_KEY_UP) {
+	} else if(ev->type == SGL_KEY_UP) {
 		printf("got key release\n");
 	} else {
 		printf("unknown event\n");
 	}
 	
-	return e;
+	return ev;
 }
 
 int main(int argc, char *argv[]) {
@@ -126,10 +124,10 @@ int main(int argc, char *argv[]) {
 	s.n = 1;
 	s.done = 0;
 	
-	sgl_init();
+	s.e = sgl_init();
 
 	sgl_screen_t *screens;
-	uint8_t num_screens = sgl_get_screens(&screens);
+	uint8_t num_screens = sgl_get_screens(s.e, &screens);
 	printf("Screens:\n");
 	int i;
 	for (i = 0; i < num_screens; i++) {
@@ -142,7 +140,7 @@ int main(int argc, char *argv[]) {
 	
 	i = 0;
 	while(s.done == 0) {
-		sgl_event_t *e = verbose_event_handling();
+		sgl_event_t *e = verbose_event_handling(s.e);
 		if (e != NULL && e->type == SGL_WINDOW_CLOSED) {
 			s.done = 1;
 		} else if (e != NULL && e->type == SGL_KEY_DOWN && (e->key.key == SGL_K_Q || e->key.key == SGL_K_ESC)) {
@@ -154,20 +152,20 @@ int main(int argc, char *argv[]) {
 			ws->fullscreen_screen = 0;
 			ws->fullscreen_blanking = 0;
 			sgl_window_settings_change(s.w, ws);
+			free(ws);
 		}
 		free(e);
 
-		usleep(1000);
+		usleep(100);
 		i++;
-		/*if(i == 15) {
-			s.done = 1;
-		} else if(i == 35) {
-			s2.done = 1;
-			usleep(20000);
-		}*/
+		//if(i == 150000) {
+			//s.done = 1;
+		//}
 	}
 	
-	sgl_clean();
+	pthread_join(t, NULL);
+
+	sgl_clean(s.e);
 	
 	return 0;
 }

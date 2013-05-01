@@ -21,6 +21,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include <sgl.h>
 #include <sgl_linux_x11.h>
@@ -29,83 +30,230 @@ GLint att[] = {GLX_RGBA, GLX_DEPTH_SIZE, 24, GLX_DOUBLEBUFFER, None};
 
 int default_x11_event_mask = KeyPressMask | KeyReleaseMask | /*ButtonPressMask | ButtonReleaseMask | */ExposureMask;
 
-sgl_window_t *sgl_init(sgl_window_settings_t *ws) {
+sgl_env_x11_t *get_env_data(sgl_env_t *e) {
+	return (sgl_env_x11_t *)e->impldata;
+}
+
+sgl_window_x11_t *get_window_data(sgl_window_t *w) {
+	return (sgl_window_x11_t *)w->impldata;
+}
+
+sgl_window_t *get_sgl_window_from_x11(sgl_env_x11_t *edata, Window w) {
+	int i;
+	for (i = 0; i < edata->arr_used; i++) {
+		if (edata->xwarr[i] == w)
+			return edata->swarr[i];
+	}
+	printf("Could not find sgl window for window %lu!\n", w);
+	return NULL;
+}
+
+void sgl_x11_enter_fullscreen(sgl_window_t *w) {
+	printf("entering fullscreen\n");
+	sgl_window_x11_t *wdata = get_window_data(w);
+	XEvent xev;
+	Atom wm_state = XInternAtom(wdata->dpy2, "_NET_WM_STATE", False);
+	Atom fullscreen = XInternAtom(wdata->dpy2, "_NET_WM_STATE_FULLSCREEN", False);
+
+	memset(&xev, 0, sizeof(xev));
+	xev.type = ClientMessage;
+	xev.xclient.window = wdata->w;
+	xev.xclient.message_type = wm_state;
+	xev.xclient.format = 32;
+	xev.xclient.data.l[0] = 1;
+	xev.xclient.data.l[1] = fullscreen;
+	xev.xclient.data.l[2] = 0;
+
+	XSendEvent(wdata->dpy2, DefaultRootWindow(wdata->dpy2), False, SubstructureNotifyMask, &xev);
+	w->settings->fullscreen = 1;
+}
+
+void sgl_x11_leave_fullscreen(sgl_window_t *w) {
+	printf("leaving fullscreen\n");
+	sgl_window_x11_t *wdata = get_window_data(w);
+	XEvent xev;
+	Atom wm_state = XInternAtom(wdata->dpy2, "_NET_WM_STATE", False);
+	Atom fullscreen = XInternAtom(wdata->dpy2, "_NET_WM_STATE_FULLSCREEN", False);
+
+	memset(&xev, 0, sizeof(xev));
+	xev.type = ClientMessage;
+	xev.xclient.window = wdata->w;
+	xev.xclient.message_type = wm_state;
+	xev.xclient.format = 32;
+	xev.xclient.data.l[0] = 0;
+	xev.xclient.data.l[1] = fullscreen;
+	xev.xclient.data.l[2] = 0;
+
+	XSendEvent(wdata->dpy2, DefaultRootWindow(wdata->dpy2), False, SubstructureNotifyMask, &xev);
+	w->settings->fullscreen = 0;
+}
+
+sgl_env_t *sgl_init(void) {
 	// so we don't need to care about thread-safety of Xlib
-	int s = XInitThreads();
-	if(s == 0) {
-		printf("could not enable Xlib multi-threading.\n");
+	XInitThreads();
+
+	sgl_env_t *e = calloc(1, sizeof(sgl_env_t));
+	if(e == NULL) {
+		printf("could not allocate memory for window structure.\n");
 		return NULL;
 	}
-	
+	e->eq = queue_create();
+
+	sgl_env_x11_t *edata = calloc(1, sizeof(sgl_env_x11_t));
+	if(edata == NULL) {
+		printf("could not allocate memory for window structure.\n");
+		return NULL;
+	}
+
+	edata->dpy = XOpenDisplay(NULL);
+	if(edata->dpy == NULL) {
+		printf("cannot connect to X server!\n");
+		return NULL;
+	}
+	edata->arr_size = 10;
+	edata->arr_used = 0;
+	edata->xwarr = calloc(edata->arr_size, sizeof(Window));
+	edata->swarr = calloc(edata->arr_size, sizeof(sgl_window_t *));
+	if (edata->xwarr == NULL || edata->swarr == NULL) {
+		printf("cannot create window arrays!\n");
+		return NULL;
+	}
+	e->impldata = edata;
+	return e;
+}
+
+uint8_t sgl_get_screens(sgl_env_t *e, sgl_screen_t **screens) {
+	// TODO returns one big screen instead of two
+	sgl_env_x11_t *edata = get_env_data(e);
+	int i, num_screens = XScreenCount(edata->dpy);
+	printf("num screens: %d\n", num_screens);
+	*screens = calloc(num_screens, sizeof(sgl_screen_t));
+	for (i = 0; i < num_screens; i++) {
+		Screen *s = XScreenOfDisplay(edata->dpy, i);
+		(*screens)[i].no = i;
+		(*screens)[i].width = XWidthOfScreen(s);
+		(*screens)[i].height = XHeightOfScreen(s);
+		(*screens)[i].depth = XDefaultDepthOfScreen(s);
+		(*screens)[i].description_len = 0;
+		(*screens)[i].description = NULL;
+	}
+	return num_screens;
+}
+
+sgl_window_t *sgl_window_create(sgl_env_t *e, sgl_window_settings_t *ws) {
+	sgl_env_x11_t *edata = get_env_data(e);
+	if (edata->arr_size == edata->arr_used) {
+		printf("too many windows. dynamic resize not implemented\n");
+		return NULL;
+	}
+
 	sgl_window_t *w = calloc(1, sizeof(sgl_window_t));
 	if(w == NULL) {
 		printf("could not allocate memory for window structure.\n");
 		return NULL;
 	}
-	w->eq = queue_create();
-	
-	w->mtx = malloc(sizeof(pthread_mutex_t));
-	pthread_mutex_init(w->mtx, NULL);
-	
-	w->dpy = XOpenDisplay(NULL);
-	if(w->dpy == NULL) {
-		printf("cannot connect to X server!\n");
+	sgl_window_x11_t *wdata = calloc(1, sizeof(sgl_window_x11_t));
+	if(wdata == NULL) {
+		printf("could not allocate memory for window structure.\n");
 		return NULL;
 	}
+	sgl_window_settings_t *wscopy = calloc(1, sizeof(sgl_window_settings_t));
+	if (wscopy == NULL)
+		return NULL;
+	memcpy(wscopy, ws, sizeof(sgl_window_settings_t));
+	w->settings = wscopy;
 	
-	Window root = XDefaultRootWindow(w->dpy);
-	w->vi = glXChooseVisual(w->dpy, 0, att);
-	if(w->vi == NULL) {
+	wdata->dpy2 = edata->dpy;
+	Window root = XDefaultRootWindow(edata->dpy);
+	wdata->vi = glXChooseVisual(edata->dpy, 0, att);
+	if(wdata->vi == NULL) {
 		printf("could not find visual with your parameters.\n");
 		return NULL;
 	}
 	
-	w->cmap = XCreateColormap(w->dpy, root, w->vi->visual, AllocNone);
+	wdata->cmap = XCreateColormap(edata->dpy, root, wdata->vi->visual, AllocNone);
 	
 	XSetWindowAttributes swa;
-	swa.colormap = w->cmap;
+	swa.colormap = wdata->cmap;
 	swa.event_mask = default_x11_event_mask;
 	
-	w->w = XCreateWindow(w->dpy, root, 0, 0, ws->width, ws->height, 0, w->vi->depth, InputOutput, w->vi->visual, CWColormap | CWEventMask, &swa);
-	if(!(w->w)) {
+	wdata->w = XCreateWindow(edata->dpy, root, 0, 0, ws->width, ws->height, 0, wdata->vi->depth, InputOutput, wdata->vi->visual, CWColormap | CWEventMask, &swa);
+	if(!(wdata->w)) {
 		printf("failed to create window.\n");
 		return NULL;
 	}
+	edata->xwarr[edata->arr_used] = wdata->w;
+	edata->swarr[edata->arr_used] = w;
+	printf("created window %lu\n", wdata->w);
+	edata->arr_used++;
 	
-	w->wmDeleteMessage = XInternAtom(w->dpy, "WM_DELETE_WINDOW", False);
-	XSetWMProtocols(w->dpy, w->w, &(w->wmDeleteMessage), 1);
-	XSelectInput(w->dpy, root, SubstructureNotifyMask);
+	wdata->wmDeleteMessage = XInternAtom(edata->dpy, "WM_DELETE_WINDOW", False);
+	XSetWMProtocols(edata->dpy, wdata->w, &(wdata->wmDeleteMessage), 1);
+	XSelectInput(edata->dpy, root, SubstructureNotifyMask);
 	
-	XStoreName(w->dpy, w->w, ws->title);
-	XMapWindow(w->dpy, w->w);
+	XStoreName(edata->dpy, wdata->w, ws->title);
+	XMapWindow(edata->dpy, wdata->w);
 	
-	w->glc = glXCreateContext(w->dpy, w->vi, NULL, GL_TRUE);
-	if(w->glc == NULL) {
+	wdata->glc = glXCreateContext(edata->dpy, wdata->vi, NULL, GL_TRUE);
+	if(wdata->glc == NULL) {
 		printf("failed to create opengl context.\n");
 		return NULL;
 	}
-	glXMakeCurrent(w->dpy, w->w, w->glc);
 	
-	sgl_swap_buffers(w); // needed so that window is really shown, in some cases
-	
+	w->impldata = wdata;
+
+	// needed so that window is really shown, in some cases	
+	sgl_make_current(w);
+	sgl_swap_buffers(w);
+
 	return w;
 }
 
-int8_t sgl_translate_event(sgl_event_t *sex, XEvent *xe, sgl_window_t *w) {
+sgl_window_settings_t *sgl_window_settings_get(sgl_window_t *w) {
+	sgl_window_settings_t *wscopy = calloc(1, sizeof(sgl_window_settings_t));
+	memcpy(wscopy, w->settings, sizeof(sgl_window_settings_t));
+	return wscopy;
+}
+
+sgl_window_t *sgl_window_settings_change(sgl_window_t *w, sgl_window_settings_t *ws) {
+	 // TODO other stuff
+	if (w->settings->width != ws->width)
+		return NULL;
+	if (w->settings->height != ws->height)
+		return NULL;
+	if (w->settings->title != ws->title)
+		return NULL;
+	if (w->settings->fullscreen != ws->fullscreen) {
+		if (!(w->settings->fullscreen) && ws->fullscreen) {
+			sgl_x11_enter_fullscreen(w);
+		} else if (w->settings->fullscreen && !(ws->fullscreen)) {
+			sgl_x11_leave_fullscreen(w);
+		}
+	}
+	return w;
+}
+
+int8_t sgl_translate_event(sgl_event_t *sex, XEvent *xe, sgl_env_t *e) {
+	sgl_env_x11_t *edata = get_env_data(e);
 	sgl_event_t *se = (sgl_event_t *)sex;
 	switch(xe->type) {
 		case ClientMessage:
-			if(xe->xclient.window == w->w && (unsigned)xe->xclient.data.l[0] == w->wmDeleteMessage) {
-				se->type = SGL_WINDOW_CLOSE;
-			} else {
+			se->window = get_sgl_window_from_x11(edata, xe->xclient.window);
+			//if((unsigned)xe->xclient.data.l[0] == wdata->wmDeleteMessage) {
+				//se->type = SGL_WINDOW_CLOSE;
+			//} else {
 				return 0;
-			}
+			//}
 			break;
 			
 		case ConfigureNotify:
-			if(xe->xconfigure.window == w->w && (w->width != xe->xconfigure.width || w->height != xe->xconfigure.height)) {
-				w->width = xe->xconfigure.width;
-				w->height = xe->xconfigure.height;
+			se->window = get_sgl_window_from_x11(edata, xe->xconfigure.window);
+			if (se->window == NULL)
+				return 0;
+			sgl_window_x11_t *wdata = get_window_data(se->window);
+			if(wdata->width != xe->xconfigure.width || wdata->height != xe->xconfigure.height) {
+				wdata->width = xe->xconfigure.width;
+				wdata->height = xe->xconfigure.height;
 				se->type = SGL_WINDOW_RESIZE;
 			} else {
 				return 0;
@@ -113,45 +261,52 @@ int8_t sgl_translate_event(sgl_event_t *sex, XEvent *xe, sgl_window_t *w) {
 			break;
 			
 		case DestroyNotify:
-			if(xe->xdestroywindow.window == w->w)
-				se->type = SGL_WINDOW_CLOSED;
-			else
-				return 0;
+			se->window = get_sgl_window_from_x11(edata, xe->xdestroywindow.window);
+			se->type = SGL_WINDOW_CLOSED;
 			break;
 			
 		case Expose:
+			se->window = get_sgl_window_from_x11(edata, xe->xexpose.window);
 			se->type = SGL_WINDOW_EXPOSE;
 			break;
 			
 		case KeyPress:
-			se->type = SGL_KEY_PRESS;
+			se->window = get_sgl_window_from_x11(edata, xe->xkey.window);
+			se->type = SGL_KEY_DOWN;
 			if(0 == sgl_translate_key(&(se->key), &(xe->xkey)))
 				return 0;
 			break;
 			
 		case KeyRelease:
-			se->type = SGL_KEY_RELEASE;
+			se->window = get_sgl_window_from_x11(edata, xe->xkey.window);
+			se->type = SGL_KEY_UP;
 			if(0 == sgl_translate_key(&(se->key), &(xe->xkey)))
 				return 0;
 			break;
 			
+		// TODO mouse button stuff
 		case ButtonPress:
-			se->type = SGL_MOUSE_PRESS;
+			se->window = get_sgl_window_from_x11(edata, xe->xbutton.window);
+			se->type = SGL_MOUSE_DOWN;
 			break;
 			
 		case ButtonRelease:
-			se->type = SGL_MOUSE_RELEASE;
+			se->window = get_sgl_window_from_x11(edata, xe->xbutton.window);
+			se->type = SGL_MOUSE_UP;
 			break;
 			
 		case MotionNotify:
+			se->window = get_sgl_window_from_x11(edata, xe->xmotion.window);
 			se->type = SGL_MOUSE_MOVE;
 			break;
 			
 		case EnterNotify:
+			se->window = get_sgl_window_from_x11(edata, xe->xcrossing.window);
 			se->type = SGL_MOUSE_ENTER;
 			break;
 			
 		case LeaveNotify:
+			se->window = get_sgl_window_from_x11(edata, xe->xcrossing.window);
 			se->type = SGL_MOUSE_LEAVE;
 			break;
 			
@@ -162,86 +317,92 @@ int8_t sgl_translate_event(sgl_event_t *sex, XEvent *xe, sgl_window_t *w) {
 	return 1;
 }
 
-void sgl_check_new_events(sgl_window_t *w) {
+void sgl_check_new_events(sgl_env_t *e) {
+	sgl_env_x11_t *edata = get_env_data(e);
 	XEvent xe;
-	sgl_event_t *e;
-	while(XPending(w->dpy) > 0) {
-		XNextEvent(w->dpy, &xe);
-		e = malloc(sizeof(sgl_event_t));
-		if(0 != sgl_translate_event(e, &xe, w)) {
-			queue_put(w->eq, e);
+	sgl_event_t *ev;
+	while(XPending(edata->dpy) > 0) {
+		XNextEvent(edata->dpy, &xe);
+		ev = malloc(sizeof(sgl_event_t));
+		if(0 != sgl_translate_event(ev, &xe, e)) {
+			queue_put(e->eq, ev);
 		} else {
-			free(e);
+			free(ev);
 		}
 	}
 }
 
-void sgl_check_new_events_wait(sgl_window_t *w) {
+void sgl_check_new_events_wait(sgl_env_t *e) {
+	sgl_env_x11_t *edata = get_env_data(e);
 	XEvent xe;
-	sgl_event_t *e;
+	sgl_event_t *ev;
 	int new_events = 0;
 	
-	while(XPending(w->dpy) > 0 || new_events == 0) {
-		XNextEvent(w->dpy, &xe);
-		e = malloc(sizeof(sgl_event_t));
-		if(0 != sgl_translate_event(e, &xe, w)) {
-			queue_put(w->eq, e);
+	while(XPending(edata->dpy) > 0 || new_events == 0) {
+		XNextEvent(edata->dpy, &xe);
+		ev = malloc(sizeof(sgl_event_t));
+		if(0 != sgl_translate_event(ev, &xe, e)) {
+			queue_put(e->eq, ev);
 			new_events++;
 		} else {
-			free(e);
+			free(ev);
 		}
 	}
 }
 
-sgl_event_t *sgl_wait_event(sgl_window_t *w) {
-	if(0 != pthread_mutex_lock(w->mtx)) {
-		return NULL;
-	}
-	if(queue_empty(w->eq)) {
-		sgl_check_new_events_wait(w);
+sgl_event_t *sgl_event_wait(sgl_env_t *e) {
+	if(queue_empty(e->eq)) {
+		sgl_check_new_events_wait(e);
 	} else
-		sgl_check_new_events(w);
-	sgl_event_t *e = NULL;
-	queue_get(w->eq, (void **)&e);
-	pthread_mutex_unlock(w->mtx);
-	return e;
+		sgl_check_new_events(e);
+	sgl_event_t *ev = NULL;
+	queue_get(e->eq, (void **)&ev);
+	return ev;
 }
 
 
-sgl_event_t *sgl_check_event(sgl_window_t *w) {
-	if(0 != pthread_mutex_lock(w->mtx)) {
-		return NULL;
-	}
-	sgl_check_new_events(w);
-	sgl_event_t *e = NULL;
-	queue_get(w->eq, (void **)&e);
-	pthread_mutex_unlock(w->mtx);
-	return e;
+sgl_event_t *sgl_event_check(sgl_env_t *e) {
+	sgl_check_new_events(e);
+	sgl_event_t *ev = NULL;
+	queue_get(e->eq, (void **)&ev);
+	return ev;
 }
 
 void sgl_swap_buffers(sgl_window_t *w) {
-	glXSwapBuffers(w->dpy, w->w);
+	sgl_window_x11_t *wdata = get_window_data(w);
+	glXSwapBuffers(wdata->dpy2, wdata->w);
 }
 
-void sgl_clean(sgl_window_t *w) {
-	// first destroy window, so that waiting event threads, get the destory msg, before the queue is destroyed
-	glXMakeCurrent(w->dpy, None, NULL); // release context
-	glXDestroyContext(w->dpy, w->glc);
-	XDestroyWindow(w->dpy, w->w);
-	XFreeColormap(w->dpy, w->cmap);
-	XFree(w->vi);
+void sgl_make_current(sgl_window_t *w) {
+	sgl_window_x11_t *wdata = get_window_data(w);
+	glXMakeCurrent(wdata->dpy2, wdata->w, wdata->glc);
+}
+
+void sgl_window_close(sgl_window_t *w) {
+	sgl_window_x11_t *wdata = get_window_data(w);
+
+	// first destroy window, so that waiting event threads, get the destroy msg, before the queue is destroyed
+	glXMakeCurrent(wdata->dpy2, None, NULL); // release context
+	glXDestroyContext(wdata->dpy2, wdata->glc);
+	XDestroyWindow(wdata->dpy2, wdata->w);
+	XFreeColormap(wdata->dpy2, wdata->cmap);
+	XFree(wdata->vi);
 	printf("destroyed window\n");
 	
-	// finally destroy lock and queue
-	while(EBUSY == pthread_mutex_destroy(w->mtx))
-		usleep(100 * 1000);
-	free(w->mtx);
-	queue_destroy_complete(w->eq, NULL);
-	
-	// wait until now so that DestroyNotify is delivered
-	XCloseDisplay(w->dpy);
-	
+	free(w->settings);
+	free(w->impldata);
 	free(w);
+}
+
+void sgl_clean(sgl_env_t *e) {
+	sgl_env_x11_t *edata = get_env_data(e);
+	free(edata->xwarr);
+	free(edata->swarr);
+	// wait until now so that DestroyNotify is delivered
+	XCloseDisplay(edata->dpy);
+	free(edata);
+	queue_destroy_complete(e->eq, NULL);
+	free(e);
 }
 
 int8_t sgl_translate_key(sgl_event_key_t *ke, XKeyEvent *xk) {
@@ -249,7 +410,7 @@ int8_t sgl_translate_key(sgl_event_key_t *ke, XKeyEvent *xk) {
 	if(xk->state & Mod1Mask)
 		ke->modifier |= SGL_K_ALT;
 	if(xk->state & Mod2Mask)
-		ke->modifier |= SGL_K_NUMLOCK;
+		ke->modifier |= SGL_K_NUMPAD;
 	if(xk->state & Mod4Mask)
 		ke->modifier |= SGL_K_OS;
 	if(xk->state & Mod5Mask)
@@ -272,7 +433,7 @@ int8_t sgl_translate_key(sgl_event_key_t *ke, XKeyEvent *xk) {
 	else if(ks == XK_Return)
 		ke->key = SGL_K_RETURN;
 	else if(ks == XK_Escape)
-		ke->key = SGL_K_ESCAPE;
+		ke->key = SGL_K_ESC;
 	else if(ks == XK_Delete)
 		ke->key = SGL_K_DELETE;
 	// direction keys

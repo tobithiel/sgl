@@ -33,10 +33,8 @@
 #define COCOA_FROM_CMD 1
 
 @interface SGLApplicationDelegate : NSObject <NSApplicationDelegate> {
-	queue_t *m_eq;
 	uint8_t m_sentTermination;
 }
-- (void)terminate;
 - (queue_t *)eventQueue;
 - (NSString *)applicationName;
 - (void)populateApplicationMenu:(NSMenu *)aMenu;
